@@ -7,21 +7,39 @@
 #include <variant>
 #include <vector>
 #include <array>
+#include <exception>
 
-#define TYPE_NONE   0
-#define TYPE_INT    1
-#define TYPE_DOUBLE 2
-#define TYPE_STRING 3
-#define TYPE_ARRAY  4
+#define TYPE_NONE    0
+#define TYPE_INT     1
+#define TYPE_DOUBLE  2
+#define TYPE_STRING  3
+#define TYPE_ARRAY   4
+#define TYPE_BOOLEAN 5
 
-typedef std::variant<int, double, std::string, std::vector<std::variant<int, double, std::string>>> value_;
-typedef std::unordered_map<std::string, value_> YAML;
-
+namespace yaml
+{
 typedef struct
 {
 	std::string name;
-	value_ value;
-} Variable;
+	void* value;
+} NamedValue;
+
+typedef std::unordered_map<std::string, void*> YAML_map;
+
+// Casts the value from a YAML map to a specified type
+// Example: int data = yaml::get<int>(yaml_file["data"]);
+template<typename T>
+T get(void* val)
+{
+	return *((T*)val);
+}
+
+//template<typename T>
+//void set(YAML_map &yaml_map, std::string name, T value)
+//{
+//	void *val = new T(value);
+//	yaml_map[name] = val;
+//}
 
 // Removes tabs and spaces at the beginning and end of the string
 // E.g. "   name: person " -> "name: person"
@@ -105,6 +123,10 @@ uint8_t get_type(const std::string &str)
 	if(str.length() == 0)
 		return TYPE_NONE;
 
+	// Boolean (YAML 1.2.2 only)
+	if(str == std::string("true") || str == std::string("false"))
+		return TYPE_BOOLEAN;
+
 	// Array
 	if(str[0] == '[' && str[str.length() - 1] == ']')
 		return TYPE_ARRAY;
@@ -153,73 +175,73 @@ std::vector<std::string> split(const std::string& str, const std::string& delimi
     	return tokens;
 }
 
-// Converts a YAML line to a Variable struct (line must not contain extra spaces or tabs; use remove_spaces_after_char and truncate_spaces beforehand)
-Variable str_to_var(const std::string &str)
+NamedValue str_to_value(const std::string &str)
 {
-	Variable var;
-	auto name_value_pair = split_variable(str);
-	var.name = name_value_pair[0];
-	uint8_t type = get_type(name_value_pair[1]);
+	NamedValue val;
+	val.value = nullptr;
+	
+	std::array<std::string, 2> name_value = split_variable(str);
+	uint8_t type = get_type(name_value[1]);
+	
+	val.name = name_value[0];
+	
 	if(type == TYPE_NONE)
 	{
-		var.name = "";
-		var.value = "";
-		return var;
+		val.name = "";
+		return val;
 	}
+
 	switch(type)
 	{
 	case TYPE_INT:
-		var.value = std::stoi(name_value_pair[1]);
+		val.value = new int(std::stoi(name_value[1]));
 		break;
 	case TYPE_DOUBLE:
-		var.value = std::stod(name_value_pair[1]);
+		val.value = new double(std::stod(name_value[1]));
 		break;
 	case TYPE_STRING:
-		var.value = name_value_pair[1];
+		val.value = new std::string(name_value[1]);
 		break;
 	case TYPE_ARRAY:
-		std::string s = filter(filter(name_value_pair[1], '['), ']'); // Remove brackets
-		std::vector<std::string> values = split(s, ","); // Split values by comma
-		std::vector<std::variant<int, double, std::string>> array;
-		for(int i = 0; i < values.size(); i++)
-		{
-			std::variant<int, double, std::string> v;
-			uint8_t type = get_type(values.at(i));
-			switch(type)
-			{
-			case TYPE_INT:
-				var.value = std::stoi(values.at(i));
-				break;
-			case TYPE_DOUBLE:
-				var.value = std::stod(values.at(i));
-				break;
-			case TYPE_STRING:
-				var.value = values.at(i);
-				break;
-			}
-			array.push_back(v);
-		}
-		var.value = array;
+		//TODO
+		break;
+	case TYPE_BOOLEAN:
+		val.value = new bool(name_value[1] == std::string("true"));
 		break;
 	}
-	return var;
+	
+	return val;
 }
 
-bool is_valid(const Variable &var)
+bool is_valid(const NamedValue &val)
 {
-	return var.name.length() > 0;
+	return val.value != nullptr;
 }
+
+typedef struct
+{
+	void *value;
+	uint8_t type;
+} TypedValue;
+
+typedef struct
+{
+	YAML_map map;
+	std::vector<TypedValue> alloc_table;
+} YAMLMapWithAllocTable;
 
 // Parses the provided YAML file and returns a hashmap representing the YAML data structure
-YAML parse_yaml(std::string path)
+YAMLMapWithAllocTable parse(std::string path)
 {
-	YAML yaml;
+	YAMLMapWithAllocTable thing;
+	
+	YAML_map yaml;
 	std::vector<std::string> lines;	
 
 	std::ifstream f(path);
     	if (!f.is_open()) {
         	std::cerr << "Encountered error while trying to open " << path << "\n";
-        	return yaml;
+        	return thing;
     	}
     	std::string tmp;
     	while (getline(f, tmp))
@@ -228,10 +250,37 @@ YAML parse_yaml(std::string path)
 	
 	for(int i = 0; i < lines.size(); i++)
 	{
-		Variable v = str_to_var(lines.at(i));
+		NamedValue v = str_to_value(lines.at(i));
 		if(is_valid(v))
 			yaml[v.name] = v.value;
 	}
 
-	return yaml;
+	thing.map = yaml;
+
+	return thing;
 }
+
+void free_alloc_table(const std::vector<TypedValue> &alloc_table)
+{
+}
+
+class YAML
+{
+private:
+	std::vector<TypedValue> alloc_table; // This is used to free allocated objects
+public:
+	YAML_map data;
+
+	YAML(std::string path)
+	{
+		YAMLMapWithAllocTable thing = parse(path);
+		data = thing.map;
+		alloc_table = thing.alloc_table;
+	}
+	
+	void close()
+	{
+		free_alloc_table(alloc_table);
+	}
+};
+} // namespace yaml
