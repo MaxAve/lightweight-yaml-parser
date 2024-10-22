@@ -76,9 +76,9 @@ std::string yaml_type_to_str(YAMLType type)
 // Casts the value from a YAML map to a specified type
 // Example: int data = yaml::get<int>(yaml_file["data"]);
 template<typename T>
-T get(void* val)
+T get(const TypedValue& value)
 {
-	return *((T*)val);
+	return *((T*)value.value);
 }
 
 // Removes tabs and spaces at the beginning and end of the string
