@@ -69,6 +69,12 @@ public:
 		value = nullptr;
 	}
 
+	template<typename T>
+	T cast()
+	{ 
+		return *(static_cast<T*>(value));
+	}
+
 	size_t size()
 	{
 		switch(type)
