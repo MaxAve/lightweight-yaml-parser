@@ -21,14 +21,34 @@ namespace yaml
 {
 enum YAMLType
 {
-	None,
-	Int,
-	Double,
-	String,
-	Array,
-	Bool,
-	Object,
+	None_,
+	Int_,
+	Double_,
+	String_,
+	Array_,
+	Bool_,
+	Object_,
 };
+
+std::string yaml_type_to_str(YAMLType type)
+{
+	switch(type)
+	{
+	case YAMLType::Int_:
+		return "int"; // int
+	case YAMLType::Double_:
+		return "double"; // double
+	case YAMLType::String_:
+		return "string"; // std::string
+	case YAMLType::Array_:
+		return "array"; // yaml::Array
+	case YAMLType::Bool_:
+		return "bool"; // bool
+	case YAMLType::Object_:
+		return "object"; // yaml::Object
+	}
+	return "None";
+}
 
 typedef struct
 {
@@ -37,48 +57,67 @@ typedef struct
 	void* value;
 } NamedValue; // Pointer to an arbitrary type with a variable name
 
-typedef struct
+class TypedValue
 {
+public:
 	YAMLType type;
 	void *value;
-} TypedValue; // Pointer to an arbitrary type with a type enum included
+	
+	TypedValue()
+	{
+		type = YAMLType::None_;
+		value = nullptr;
+	}
+
+	size_t size()
+	{
+		switch(type)
+		{
+		case YAMLType::Array_:
+			return static_cast<std::vector<TypedValue>*>(value)->size();
+		case YAMLType::Object_:
+			return static_cast<std::unordered_map<std::string, TypedValue>*>(value)->size();
+		}
+		std::cerr << "ERROR: Unable to get length of type " << yaml_type_to_str(type) << ". This operation is only applicable to array and object.\n";
+		return -1;
+	}
+
+	TypedValue operator[](size_t index)
+	{
+		if(type != YAMLType::Array_)
+		{
+			std::cerr << "ERROR: Attempting to cast TypedValue of type " << yaml_type_to_str(type) << " to array.";
+			return TypedValue();
+		}
+		return static_cast<std::vector<TypedValue>*>(value)->at(index);
+	}
+
+	TypedValue operator[](std::string name)
+	{
+		if(type != YAMLType::Object_)
+		{
+			std::cerr << "ERROR: Attempting to cast TypedValue of type " << yaml_type_to_str(type) << " to object.";
+			return TypedValue();
+		}
+		return static_cast<std::unordered_map<std::string, TypedValue>*>(value)->at(name);
+	}
+}; // Pointer to an arbitrary type with a type enum includedi
 
 typedef std::vector<TypedValue> YAML_array;
 typedef std::unordered_map<std::string, TypedValue> YAML_map;
 
-typedef int         yaml_Int;
-typedef double      yaml_Double;
-typedef std::string yaml_String;
-typedef bool        yaml_Bool;
-typedef YAML_array  yaml_Array;
-typedef YAML_map    yaml_Object;
+typedef std::string String;
+typedef YAML_array  Array;
+typedef YAML_map    Object;
 
-std::string yaml_type_to_str(YAMLType type)
-{
-	switch(type)
-	{
-	case YAMLType::Int:
-		return "int"; // int
-	case YAMLType::Double:
-		return "double"; // double
-	case YAMLType::String:
-		return "string"; // std::string
-	case YAMLType::Array:
-		return "array"; // yaml::yaml_Array
-	case YAMLType::Bool:
-		return "bool"; // bool
-	case YAMLType::Object:
-		return "object"; // yaml::yaml_Object
-	}
-	return "None";
-}
+
 
 // Casts the value from a YAML map to a specified type
-// Example: int data = yaml::get<int>(yaml_file["data"]);
+// Example: int data = yaml::get<int>(yaml_file.data["data"]);
 template<typename T>
 T get(const TypedValue& value)
 {
-	return *((T*)value.value);
+	return *(static_cast<T*>(value.value));
 }
 
 // Removes tabs and spaces at the beginning and end of the string
@@ -161,15 +200,15 @@ std::array<std::string, 2> split_variable(const std::string &str)
 YAMLType get_type(const std::string &str)
 {
 	if(str.length() == 0)
-		return YAMLType::None;
+		return YAMLType::None_;
 
 	// Boolean (YAML 1.2.2 only)
 	if(str == std::string("true") || str == std::string("false"))
-		return YAMLType::Bool;
+		return YAMLType::Bool_;
 
 	// Array
 	if(str[0] == '[' && str[str.length() - 1] == ']')
-		return YAMLType::Array;
+		return YAMLType::Array_;
 	
 	// Int
 	bool is_int = true;
@@ -182,7 +221,7 @@ YAMLType get_type(const std::string &str)
 		}
 	}
 	if(is_int)
-		return YAMLType::Int;
+		return YAMLType::Int_;
 
 	// Double (only 1 dot may be present; otherwise will be interpreted as a string. E.g. 420.69 -> double; 127.0.0.1 -> string)
 	int number_of_dots = 0;
@@ -194,13 +233,14 @@ YAMLType get_type(const std::string &str)
 			break;
 	}
 	if(number_of_dots == 1)
-		return YAMLType::Double;
+		return YAMLType::Double_;
 	
 	// Everything else is interpreted as a String
-	return YAMLType::String;
+	return YAMLType::String_;
 }
 
 // Splits string by a given delimiter (will do so for multiple delimiters)
+// TODO split while accounting for scope
 std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
 	std::string s = str;
     	std::vector<std::string> tokens;
@@ -226,7 +266,7 @@ NamedValue str_to_value(const std::string &str)
 	val.type = type;
 	val.name = name_value[0];
 	
-	if(type == YAMLType::None)
+	if(type == YAMLType::None_)
 	{
 		val.name = "";
 		return val;
@@ -234,22 +274,37 @@ NamedValue str_to_value(const std::string &str)
 
 	switch(type)
 	{
-	case YAMLType::Int:
+	case YAMLType::Int_:
 		val.value = new int(std::stoi(name_value[1]));
 		break;
-	case YAMLType::Double:
+	case YAMLType::Double_:
 		val.value = new double(std::stod(name_value[1]));
 		break;
-	case YAMLType::String:
+	case YAMLType::String_:
 		val.value = new std::string(name_value[1]);
 		break;
-	case YAMLType::Array:
-		//TODO
+	case YAMLType::Array_:
+	{
+		val.value = new Array();
+		std::string values_str = name_value[1].substr(1, name_value[1].length() - 2);
+		std::vector<std::string> values_split = split(values_str, ",");
+		for(int i = 0; i < values_split.size(); i++)
+		{
+			std::string named_val = "_:" + values_split.at(i);
+			std::cout << "[DEBUG] "<< named_val << "\n";
+			TypedValue new_val;
+			NamedValue nval = str_to_value(values_split.at(i));
+			new_val.type = nval.type;
+			new_val.value = nval.value;
+			static_cast<Array*>(val.value)->push_back(new_val);
+		}
 		break;
-	case YAMLType::Bool:
+	}
+	case YAMLType::Bool_:
 		val.value = new bool(name_value[1] == std::string("true"));
 		break;
-	case YAMLType::Object:
+	case YAMLType::Object_:
+		std::cout << "no implementation yet\n";
 		break;
 	}
 	
@@ -304,6 +359,16 @@ public:
 	{
 		//TODO deallocate everything
 		std::cout << "yaml go bye bye :(\n";
-	}	
+	}
+
+	size_t size()
+	{
+		return data.size();
+	}
+	
+	TypedValue operator[](std::string name)
+	{
+		return data[name];
+	}
 };
 } // namespace yaml
