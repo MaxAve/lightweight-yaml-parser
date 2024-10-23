@@ -1,7 +1,8 @@
 name: John Doe
-age: 69
+age: 35
 employed: true
 data: [1.0, 6.9, 3.1415926]
+# This is a comment
 nested_arrays: [
 	[
 		[546, 32, 32],
@@ -19,3 +20,7 @@ nested_arrays: [
 		[123]
 	]
 ]
+career:
+	degree: masters
+	job: sr. software engineer # This is another comment
+height: 1.87

@@ -126,6 +126,22 @@ T get(const TypedValue& value)
 	return *(static_cast<T*>(value.value));
 }
 
+// Counts the number of spaces set at the beginning of a string
+int count_spaces(const std::string &str, int tab_spaces=4)
+{
+	int spaces = 0;
+	for(int i = 0; i < str.length(); i++)
+	{
+		if(str[i] == ' ')
+			spaces++;
+		else if(str[i] == '\t')
+			spaces += tab_spaces;
+		else
+			return spaces;
+	}
+	return spaces;
+}
+
 // Removes tabs and spaces at the beginning and end of the string
 // E.g. "   name: person " -> "name: person"
 std::string truncate_spaces(const std::string &str)
@@ -152,6 +168,23 @@ std::string truncate_spaces(const std::string &str)
 	}
 
 	return new_str;
+}
+
+std::string truncate_spaces_after(const std::string &str)
+{
+	int trailing_spaces = 0;
+
+	for(int i = str.length() - 1; i >= 0; i--)
+	{
+		if(str.length() == 0 && (str[i] == ' ' || str[i] == '\t'))
+		{
+			trailing_spaces++;
+			continue;
+		}
+		break;
+	}
+
+	return str.substr(0, str.length() - trailing_spaces);
 }
 
 // Removes all tabs and spaces that come after a specified char
@@ -231,34 +264,26 @@ YAMLType get_type(const std::string &str)
 
 	// Double (only 1 dot may be present; otherwise will be interpreted as a string. E.g. 420.69 -> double; 127.0.0.1 -> string)
 	int number_of_dots = 0;
+	bool contains_other_char = false;
 	for(int i = 0; i < str.length(); i++)
 	{
+		// When only 1 dot is present but non-number chars are found, interpret value as string
+		if((str[i] < '0' || str[i] > '9') && str[i] != '.')
+		{
+			contains_other_char = true;
+			break;
+		}
 		if(str[i] == '.')
 			number_of_dots++;
 		if(number_of_dots > 1)
 			break;
 	}
-	if(number_of_dots == 1)
+	if(number_of_dots == 1 && !contains_other_char)
 		return YAMLType::Double_;
 	
 	// Everything else is interpreted as a String
 	return YAMLType::String_;
 }
-
-// Splits string by a given delimiter (will do so for multiple delimiters)
-/*std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
-	std::string s = str;
-    	std::vector<std::string> tokens;
-    	size_t pos = 0;
-    	std::string token;
-    	while ((pos = s.find(delimiter)) != std::string::npos) {
-        	token = s.substr(0, pos);
-        	tokens.push_back(token);
-        	s.erase(0, pos + delimiter.length());
-    	}
-    	tokens.push_back(s);
-    	return tokens;
-}*/
 
 std::vector<std::string> split_array(const std::string& str)
 {
@@ -305,7 +330,6 @@ NamedValue str_to_value(const std::string &str)
 	
 	if(type == YAMLType::None_)
 	{
-		val.name = "";
 		return val;
 	}
 
@@ -367,20 +391,44 @@ YAML_map parse(std::string path)
     	std::string tmp;
     	while (getline(f, tmp))
 	{
+		tmp = tmp.substr(0, tmp.find('#'));
+		if(truncate_spaces(tmp).length() == 0)
+			continue;
 		if(tmp.find(':') != std::string::npos)
-        		lines.push_back(remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ','));
+        		lines.push_back(remove_spaces_after_char(remove_spaces_after_char(truncate_spaces_after(tmp), ':'), ','));
 		else
 			lines.at(lines.size()-1) += remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ',');
 	}
     	f.close();
 	
+	void* object_to_add_to = nullptr;
+
 	for(int i = 0; i < lines.size(); i++)
 	{
-		NamedValue v = str_to_value(lines.at(i));
+		NamedValue v = str_to_value(truncate_spaces(lines.at(i)));
 		if(is_valid(v))
 		{
-			yaml[v.name].value = v.value;
-			yaml[v.name].type = v.type;
+			if(object_to_add_to == nullptr)
+			{
+				yaml[v.name].value = v.value;
+				yaml[v.name].type = v.type;
+			}
+			else
+			{
+				std::cout << object_to_add_to << "\n";
+				TypedValue tv;	
+				tv.type = v.type;
+				tv.value = v.value;
+				(*(static_cast<Object*>(object_to_add_to)))[v.name] = tv;
+			}
+		}
+		else
+		{
+			std::cout << "[DEBUG] " << v.name << "\n";
+			yaml[v.name] = TypedValue();
+			yaml[v.name].type = YAMLType::Object_;
+			yaml[v.name].value = new Object();
+			object_to_add_to = yaml[v.name].value;
 		}
 	}
 

@@ -25,9 +25,19 @@ int main()
 	int value_from_nested_array = yaml_file["nested_arrays"][2][1][1].cast<int>();
 	std::cout << "value_from_nested_array = " << value_from_nested_array << "\n"; // Expected: 69420
 
+	std::cout << "Job: " << yaml_file["career"]["job"].cast<std::string>() << "\n";
+	//std::cout << yaml::yaml_type_to_str(yaml_file["career"].type) << "\n";	
+
 	// Outputting the interpreted data type of a value:
 	yaml::YAMLType type_of_name = yaml_file["name"].type;
 	std::cout << "Type of name: " << yaml::yaml_type_to_str(type_of_name) << "\n";
+
+	// Iterating through every value in the yaml file:
+	// Note: you have to use yaml_file.data
+	for(auto& it : yaml_file.data)
+	{
+		std::cout << it.first << "\n";
+	}
 
 	return 0;
 }
