@@ -240,8 +240,7 @@ YAMLType get_type(const std::string &str)
 }
 
 // Splits string by a given delimiter (will do so for multiple delimiters)
-// TODO split while accounting for scope
-std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
+/*std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
 	std::string s = str;
     	std::vector<std::string> tokens;
     	size_t pos = 0;
@@ -253,6 +252,38 @@ std::vector<std::string> split(const std::string& str, const std::string& delimi
     	}
     	tokens.push_back(s);
     	return tokens;
+}*/
+
+std::vector<std::string> split_array(const std::string& str)
+{
+	std::string tmp = "";
+	int scope = 0;
+	std::vector<std::string> tokens;
+	for(int i = 0; i < str.length(); i++)
+	{
+		if(str[i] == '[')
+			scope++;
+		else if(str[i] == ']')
+			scope--;
+		//std::cout << "DEBUG SPLIT_ARRAY: " << tmp << " | " << scope << "\n";
+		if((str[i] == ',' || str[i] == ']') && scope <= 1)
+		{
+			bool valid = true;
+			tmp = tmp.substr(1, tmp.length()-1);
+			if(tmp.length() == 0)
+				valid = false;
+			if(tmp[0] == '[')
+				tmp += ']';
+			//std::cout << "ADDING: " << tmp << "(" << tmp.length() << ")\n";
+			if(valid)
+				tokens.push_back(tmp);
+			tmp = "";
+		}
+		tmp += str[i];
+	}
+	//for(int i = 0; i < tokens.size(); i++)
+		//std::cout << "token: " << tokens.at(i) << "\n";
+	return tokens;
 }
 
 NamedValue str_to_value(const std::string &str)
@@ -286,12 +317,12 @@ NamedValue str_to_value(const std::string &str)
 	case YAMLType::Array_:
 	{
 		val.value = new Array();
-		std::string values_str = name_value[1].substr(1, name_value[1].length() - 2);
-		std::vector<std::string> values_split = split(values_str, ",");
+		std::string values_str = name_value[1];//.substr(1, name_value[1].length() - 2);
+		std::vector<std::string> values_split = split_array(values_str);
 		for(int i = 0; i < values_split.size(); i++)
 		{
 			std::string named_val = "_:" + values_split.at(i);
-			std::cout << "[DEBUG] "<< named_val << "\n";
+			//std::cout << "[DEBUG] "<< named_val << "\n";
 			TypedValue new_val;
 			NamedValue nval = str_to_value(values_split.at(i));
 			new_val.type = nval.type;

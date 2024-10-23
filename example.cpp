@@ -23,13 +23,13 @@ int main()
 	{
 		//std::cout << "\t" << yaml::get<double>(data_array[i]) << "\n";
 		std::cout << "\t" << yaml::get<double>(yaml_file["data"][i]) << "\n";
-	}	
-	// wtf is this shit
-	int x = yaml::get<int>(((yaml::Array*)(((yaml::Array*)yaml_file["nested_arrays"].value)->at(0).value))->at(0));
-	std::cout << "x = " << x << "\n";
+	}
+	
+	// Acessing values from nested arrays:
+	int value_from_nested_array = yaml::get<int>(yaml_file["nested_arrays"][2][1][1]);
+	std::cout << "value_from_nested_array = " << value_from_nested_array << "\n"; // Expected: 69420
 
-	// You can get the (interpreted) type of a value with yaml_file["VARIABLE_NAME"].type
-	// This returns a yaml::YAMLType enum. For debugging you can use yaml::yaml_type_to_str()
+	// Outputting the interpreted data type of a value:
 	yaml::YAMLType type_of_name = yaml_file["name"].type;
 	std::cout << "Type of name: " << yaml::yaml_type_to_str(type_of_name) << "\n";
 
