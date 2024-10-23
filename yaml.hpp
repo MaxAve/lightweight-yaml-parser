@@ -360,7 +360,12 @@ YAML_map parse(std::string path)
     	}
     	std::string tmp;
     	while (getline(f, tmp))
-        	lines.push_back(remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ','));
+	{
+		if(tmp.find(':') != std::string::npos)
+        		lines.push_back(remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ','));
+		else
+			lines.at(lines.size()-1) += remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ',');
+	}
     	f.close();
 	
 	for(int i = 0; i < lines.size(); i++)
