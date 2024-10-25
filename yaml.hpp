@@ -6,14 +6,6 @@
 #include <exception>
 #include <stack>
 
-#define TYPE_NONE     0
-#define TYPE_INT      1
-#define TYPE_DOUBLE   2
-#define TYPE_STRING   3
-#define TYPE_ARRAY    4
-#define TYPE_BOOLEAN  5
-#define TYPE_YAML_OBJ 6
-
 namespace yaml
 {
 enum YAMLType
@@ -47,6 +39,20 @@ std::string yaml_type_to_str(YAMLType type)
 	return "None";
 }
 
+class TypeMismatchException : public std::exception
+{
+private:
+    	std::string message;
+
+public:
+	TypeMismatchException(const char* msg) : message(msg) {}
+
+    	const char* what() const throw()
+    	{
+		return message.c_str();
+    	}
+};
+
 typedef struct
 {
 	std::string name;
@@ -68,7 +74,36 @@ public:
 
 	template<typename T>
 	T cast()
-	{	 
+	{
+		// Type checking
+		switch(type)
+		{
+		case YAMLType::Int_:
+			if(!std::is_same<T, int>::value)
+				throw TypeMismatchException("Attempting to cast Integer value to an incompatible type");
+			break;	
+		case YAMLType::Double_:
+			if(!std::is_same<T, double>::value)
+				throw TypeMismatchException("Attempting to cast Double value to an incompatible type. If you are trying to cast to a float, cast to a Double first. Example: static_cast<float>(yaml_file[\"data\"].cast<double>())");
+			break;
+		case YAMLType::String_:
+			if(!std::is_same<T, std::string>::value)
+				throw TypeMismatchException("Attempting to cast String value to an incompatible type");
+			break;
+		case YAMLType::Array_:
+			if(!std::is_same<T, std::vector<TypedValue>>::value)
+				throw TypeMismatchException("Attempting to cast Array value to an incompatible type");
+			break;
+		case YAMLType::Bool_:
+			if(!std::is_same<T, bool>::value)
+				throw TypeMismatchException("Attempting to cast Bool value to an incompatible type");
+			break;
+		case YAMLType::Object_:
+			if(!std::is_same<T, std::unordered_map<std::string, TypedValue>>::value)
+				throw TypeMismatchException("Attempting to cast Object value to an incompatible type");
+			break;
+		}
+
 		return *(static_cast<T*>(value));
 	}
 
@@ -112,16 +147,6 @@ typedef std::unordered_map<std::string, TypedValue> YAML_map;
 typedef std::string String;
 typedef YAML_array  Array;
 typedef YAML_map    Object;
-
-
-
-// Casts the value from a YAML map to a specified type
-// Example: int data = yaml::get<int>(yaml_file.data["data"]);
-template<typename T>
-T get(const TypedValue& value)
-{
-	return *(static_cast<T*>(value.value));
-}
 
 // Counts the number of spaces set at the beginning of a string
 int count_spaces(const std::string &str, int tab_spaces=4)
@@ -167,6 +192,7 @@ std::string truncate_spaces(const std::string &str)
 	return new_str;
 }
 
+// Removes excess spaces and tabs that come after a line
 std::string truncate_spaces_after(const std::string &str)
 {
 	int trailing_spaces = 0;
@@ -293,7 +319,6 @@ std::vector<std::string> split_array(const std::string& str)
 			scope++;
 		else if(str[i] == ']')
 			scope--;
-		//std::cout << "DEBUG SPLIT_ARRAY: " << tmp << " | " << scope << "\n";
 		if((str[i] == ',' || str[i] == ']') && scope <= 1)
 		{
 			bool valid = true;
@@ -302,18 +327,16 @@ std::vector<std::string> split_array(const std::string& str)
 				valid = false;
 			if(tmp[0] == '[')
 				tmp += ']';
-			//std::cout << "ADDING: " << tmp << "(" << tmp.length() << ")\n";
 			if(valid)
 				tokens.push_back(tmp);
 			tmp = "";
 		}
 		tmp += str[i];
 	}
-	//for(int i = 0; i < tokens.size(); i++)
-		//std::cout << "token: " << tokens.at(i) << "\n";
 	return tokens;
 }
 
+// Converts a value string to an actual value
 NamedValue str_to_value(const std::string &str)
 {
 	NamedValue val;
@@ -365,6 +388,7 @@ NamedValue str_to_value(const std::string &str)
 	return val;
 }
 
+// Returns true if the input string is a valid key-value pair
 bool is_valid(const NamedValue &val)
 {
 	return val.value != nullptr;
@@ -374,7 +398,9 @@ bool is_valid(const NamedValue &val)
 YAML_map parse(std::string path)
 {
 	YAML_map yaml;
-	std::vector<std::string> lines;	
+	std::vector<std::string> lines;
+
+	int file_indent=0;	
 
 	std::ifstream f(path);
     	if (!f.is_open()) {
@@ -384,13 +410,23 @@ YAML_map parse(std::string path)
     	std::string tmp;
     	while (getline(f, tmp))
 	{
-		tmp = tmp.substr(0, tmp.find('#'));
+		tmp = tmp.substr(0, tmp.find('#')); // Ignore comments (everything that starts with a #)
+
 		if(truncate_spaces(tmp).length() == 0)
 			continue;
+
+		int spaces = count_spaces(tmp);
+		if(spaces > 0 && file_indent == 0)
+			file_indent = spaces;
+
 		if(tmp.find(':') != std::string::npos)
+		{
         		lines.push_back(remove_spaces_after_char(remove_spaces_after_char(truncate_spaces_after(tmp), ':'), ','));
+		}
 		else
+		{
 			lines.at(lines.size()-1) += remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ',');
+		}
 	}
     	f.close();
 
@@ -400,11 +436,11 @@ YAML_map parse(std::string path)
 	
 	for(int i = 0; i < lines.size(); i++)
 	{
-		int indent = count_spaces(lines.at(i), 1); // TODO calculate the indentation first
+		int indent = count_spaces(lines.at(i));
 		
 		if(indent < prev_indent)
 		{
-			for(int i = 0; i < (prev_indent - indent); i++)
+			for(int i = 0; i < (prev_indent - indent) / file_indent; i++)
 			{
 				scope_stack.pop();
 			}
@@ -433,6 +469,44 @@ YAML_map parse(std::string path)
 	return yaml;
 }
 
+// Recursively frees every value
+void delete_values(const TypedValue &v)
+{
+	switch(v.type)
+	{
+	case YAMLType::Int_:
+		delete static_cast<int*>(v.value);
+		break;
+	case YAMLType::Double_:
+		delete static_cast<double*>(v.value);
+		break;
+	case YAMLType::Bool_:
+		delete static_cast<bool*>(v.value);
+		break;
+	case YAMLType::String_:
+		delete static_cast<std::string*>(v.value);
+		break;
+	case YAMLType::Array_:
+	{
+		for(int i = 0; i < (static_cast<Array*>(v.value))->size(); i++)
+		{
+			delete_values((static_cast<Array*>(v.value))->at(i));
+		}
+		delete static_cast<Array*>(v.value);
+		break;
+	}
+	case YAMLType::Object_:
+	{
+		for(auto it : *(static_cast<Object*>(v.value)))
+		{
+			delete_values(it.second);
+		}
+		delete static_cast<Object*>(v.value);
+		break;
+	}
+	}
+}
+
 class YAML
 {
 public:
@@ -445,8 +519,10 @@ public:
 
 	~YAML()
 	{
-		//TODO deallocate everything
-		std::cout << "yaml go bye bye :(\n";
+		for(auto it : data)
+		{
+			delete_values(it.second);
+		}
 	}
 
 	size_t size()
