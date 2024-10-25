@@ -1,13 +1,10 @@
-// Simple YAML parser implementation
-// Note: the parser currently does NOT support nested lists (e.g. [[1, 2, 3], [4, 5, 6]])
-
 #include <iostream>
 #include <unordered_map>
 #include <fstream>
-#include <variant>
 #include <vector>
 #include <array>
 #include <exception>
+#include <stack>
 
 #define TYPE_NONE     0
 #define TYPE_INT      1
@@ -71,7 +68,7 @@ public:
 
 	template<typename T>
 	T cast()
-	{ 
+	{	 
 		return *(static_cast<T*>(value));
 	}
 
@@ -253,7 +250,7 @@ YAMLType get_type(const std::string &str)
 	bool is_int = true;
 	for(int i = 0; i < str.length(); i++)
 	{
-		if(str[i] < '0' || str[i] > '9')
+		if((str[i] < '0' || str[i] > '9') && str[i] != '-')
 		{
 			is_int = false;
 			break;
@@ -268,7 +265,7 @@ YAMLType get_type(const std::string &str)
 	for(int i = 0; i < str.length(); i++)
 	{
 		// When only 1 dot is present but non-number chars are found, interpret value as string
-		if((str[i] < '0' || str[i] > '9') && str[i] != '.')
+		if((str[i] < '0' || str[i] > '9') && str[i] != '.' && str[i] != '-')
 		{
 			contains_other_char = true;
 			break;
@@ -347,12 +344,11 @@ NamedValue str_to_value(const std::string &str)
 	case YAMLType::Array_:
 	{
 		val.value = new Array();
-		std::string values_str = name_value[1];//.substr(1, name_value[1].length() - 2);
+		std::string values_str = name_value[1];
 		std::vector<std::string> values_split = split_array(values_str);
 		for(int i = 0; i < values_split.size(); i++)
 		{
 			std::string named_val = "_:" + values_split.at(i);
-			//std::cout << "[DEBUG] "<< named_val << "\n";
 			TypedValue new_val;
 			NamedValue nval = str_to_value(values_split.at(i));
 			new_val.type = nval.type;
@@ -363,9 +359,6 @@ NamedValue str_to_value(const std::string &str)
 	}
 	case YAMLType::Bool_:
 		val.value = new bool(name_value[1] == std::string("true"));
-		break;
-	case YAMLType::Object_:
-		std::cout << "no implementation yet\n";
 		break;
 	}
 	
@@ -400,36 +393,41 @@ YAML_map parse(std::string path)
 			lines.at(lines.size()-1) += remove_spaces_after_char(remove_spaces_after_char(truncate_spaces(tmp), ':'), ',');
 	}
     	f.close();
-	
-	void* object_to_add_to = nullptr;
 
+	std::stack<void*> scope_stack; // This is used for properly handling nested objects
+	scope_stack.push(&yaml);
+	int prev_indent = 0;	
+	
 	for(int i = 0; i < lines.size(); i++)
 	{
+		int indent = count_spaces(lines.at(i), 1); // TODO calculate the indentation first
+		
+		if(indent < prev_indent)
+		{
+			for(int i = 0; i < (prev_indent - indent); i++)
+			{
+				scope_stack.pop();
+			}
+		}
+
 		NamedValue v = str_to_value(truncate_spaces(lines.at(i)));
+
 		if(is_valid(v))
 		{
-			if(object_to_add_to == nullptr)
-			{
-				yaml[v.name].value = v.value;
-				yaml[v.name].type = v.type;
-			}
-			else
-			{
-				std::cout << object_to_add_to << "\n";
-				TypedValue tv;	
-				tv.type = v.type;
-				tv.value = v.value;
-				(*(static_cast<Object*>(object_to_add_to)))[v.name] = tv;
-			}
+			// Adding value to the deepest object
+			(*((Object*)(scope_stack.top())))[v.name].value = v.value;
+			(*((Object*)(scope_stack.top())))[v.name].type = v.type;
 		}
 		else
 		{
-			std::cout << "[DEBUG] " << v.name << "\n";
-			yaml[v.name] = TypedValue();
-			yaml[v.name].type = YAMLType::Object_;
-			yaml[v.name].value = new Object();
-			object_to_add_to = yaml[v.name].value;
+			// Add a new object to the deepest object if the string has no value after the semicolon
+			(*((Object*)(scope_stack.top())))[v.name] = TypedValue();
+			(*((Object*)(scope_stack.top())))[v.name].type = YAMLType::Object_;
+			(*((Object*)(scope_stack.top())))[v.name].value = new Object();
+			scope_stack.push((*((Object*)(scope_stack.top())))[v.name].value); 
 		}
+
+		prev_indent = indent;
 	}
 
 	return yaml;
