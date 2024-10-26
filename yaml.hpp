@@ -1,3 +1,12 @@
+// Version 1.0.0
+//
+// Warning: this is an early version that does not support certain aspects of YAML!
+// Some features that currently have no implementation include:
+// 1-line objetcs e.g. 'value: {a: 1, b: 2, c: 3}'
+// Anchors
+// Object lists (with -)
+// Mulit-line strings
+
 #include <iostream>
 #include <unordered_map>
 #include <fstream>
