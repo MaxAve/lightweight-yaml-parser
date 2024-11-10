@@ -112,7 +112,7 @@ public:
 		switch(type)
 		{
 		case YAMLType::Int_:
-			if(!std::is_same<T, int>::value)
+			if(!std::is_same<T, int>::value && !std::is_same<T, double>::value)
 				throw TypeMismatchException("Attempting to cast Integer value to an incompatible type");
 			break;	
 		case YAMLType::Double_:
